@@ -9,7 +9,12 @@ function signingSecret(): string {
   return secret;
 }
 
-function createDownloadUrl(request: Request, params: {
+function publicBaseUrl(): string {
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  return host ? `https://${host}` : "http://localhost:3000";
+}
+
+function createDownloadUrl(params: {
   input: string;
   voiceId: string;
   model: string;
@@ -19,8 +24,7 @@ function createDownloadUrl(request: Request, params: {
   const exp = String(Date.now() + 15 * 60 * 1000);
   const payload = [encodedInput, params.voiceId, params.model, params.audioFormat, exp].join("|");
   const sig = createHmac("sha256", signingSecret()).update(payload).digest("hex");
-  const base = new URL(request.url).origin;
-  const url = new URL("/api/audio", base);
+  const url = new URL("/api/audio", publicBaseUrl());
   url.searchParams.set("input", encodedInput);
   url.searchParams.set("voice_id", params.voiceId);
   url.searchParams.set("model", params.model);
@@ -61,20 +65,17 @@ const handler = createMcpHandler((server) => {
         audio_format: z.enum(["mp3", "wav", "ogg", "aac"]).optional().default("mp3"),
       }),
     },
-    async ({ input, voice_id, model, audio_format }, extra) => {
+    async ({ input, voice_id, model, audio_format }) => {
       const result = await synthesizeSpeech({ input, voiceId: voice_id, model, audioFormat: audio_format });
       const mimeType =
         audio_format === "wav" ? "audio/wav" :
         audio_format === "ogg" ? "audio/ogg" :
         audio_format === "aac" ? "audio/aac" : "audio/mpeg";
-      const request = extra?.requestInfo?.request as Request | undefined;
-      const downloadUrl = request
-        ? createDownloadUrl(request, { input, voiceId: voice_id, model, audioFormat: audio_format })
-        : undefined;
+      const downloadUrl = createDownloadUrl({ input, voiceId: voice_id, model, audioFormat: audio_format });
       const text = [
         "Speech generated successfully.",
         result.requestId ? `Speechify request ID: ${result.requestId}` : undefined,
-        downloadUrl ? `Download audio: ${downloadUrl}` : undefined,
+        `Download audio: ${downloadUrl}`,
       ].filter(Boolean).join("\n");
       return {
         content: [
@@ -96,17 +97,14 @@ const handler = createMcpHandler((server) => {
         audio_format: z.enum(["mp3", "wav"]).optional().default("mp3"),
       }),
     },
-    async ({ input, voice_id, audio_format }, extra) => {
+    async ({ input, voice_id, audio_format }) => {
       const model = "simba-3.2";
       const result = await synthesizeSpeech({ input, voiceId: voice_id, model, audioFormat: audio_format });
-      const request = extra?.requestInfo?.request as Request | undefined;
-      const downloadUrl = request
-        ? createDownloadUrl(request, { input, voiceId: voice_id, model, audioFormat: audio_format })
-        : undefined;
+      const downloadUrl = createDownloadUrl({ input, voiceId: voice_id, model, audioFormat: audio_format });
       const text = [
         "Speech generated successfully.",
         result.requestId ? `Speechify request ID: ${result.requestId}` : undefined,
-        downloadUrl ? `Download audio: ${downloadUrl}` : undefined,
+        `Download audio: ${downloadUrl}`,
       ].filter(Boolean).join("\n");
       return {
         content: [
